@@ -133,6 +133,7 @@ The script creates a build virtualenv, installs dependencies plus PyInstaller, g
 - ffmpeg/ffprobe are bundled inside the app; if missing, the app falls back to the system `PATH`.
 - GPU acceleration in the bundles: **DirectML** on Windows (any DirectX 12 GPU — NVIDIA, AMD, Intel iGPU; falls back to CPU), **CoreML** on Apple Silicon, **CPU** on Linux. For NVIDIA CUDA, run from source as described below.
 - The bundles are unsigned, so Windows SmartScreen / macOS Gatekeeper will show a warning on first launch.
+- No GPU locally? `packaging/cloud-gpu-setup.sh` sets up a rented NVIDIA cloud VM (AWS/GCP/Paperspace/Lambda) for fast headless video processing. Status, performance notes, and upgrade paths are logged in [docs/desktop-app-notes.md](docs/desktop-app-notes.md).
 
 </details>
 
