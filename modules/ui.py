@@ -315,7 +315,10 @@ def save_switch_states():
         "mouth_mask_size": modules.globals.mouth_mask_size,
     }
     try:
-        with open("switch_states.json", "w") as f:
+        from modules.paths import SETTINGS_DIR, ensure_writable_dir
+
+        ensure_writable_dir(SETTINGS_DIR)
+        with open(os.path.join(SETTINGS_DIR, "switch_states.json"), "w") as f:
             json.dump(state, f)
     except OSError:
         pass
@@ -323,7 +326,9 @@ def save_switch_states():
 
 def load_switch_states():
     try:
-        with open("switch_states.json", "r") as f:
+        from modules.paths import SETTINGS_DIR
+
+        with open(os.path.join(SETTINGS_DIR, "switch_states.json"), "r") as f:
             state = json.load(f)
         modules.globals.keep_fps = state.get("keep_fps", True)
         modules.globals.keep_audio = state.get("keep_audio", True)

@@ -1,16 +1,31 @@
 #!/usr/bin/env python3
 
+import multiprocessing
 import os
 import sys
 
-# Add the project root to PATH so bundled ffmpeg/ffprobe are found
-project_root = os.path.dirname(os.path.abspath(__file__))
-os.environ["PATH"] = project_root + os.pathsep + os.environ.get("PATH", "")
+IS_FROZEN = bool(getattr(sys, "frozen", False))
+
+if IS_FROZEN:
+    # Frozen desktop build (PyInstaller): expose the bundle directory and
+    # the bundled ffmpeg location on PATH for child processes.
+    project_root = getattr(
+        sys, "_MEIPASS", os.path.dirname(os.path.abspath(sys.executable))
+    )
+    _ffmpeg_bin = os.path.join(project_root, "ffmpeg-bin")
+    for _p in (_ffmpeg_bin, project_root):
+        if os.path.isdir(_p):
+            os.environ["PATH"] = _p + os.pathsep + os.environ.get("PATH", "")
+else:
+    # Add the project root to PATH so bundled ffmpeg/ffprobe are found
+    project_root = os.path.dirname(os.path.abspath(__file__))
+    os.environ["PATH"] = project_root + os.pathsep + os.environ.get("PATH", "")
 
 # On Windows, register NVIDIA CUDA DLL directories so onnxruntime-gpu can
 # find cuDNN/cublas. Python 3.8+ ignores PATH for extension-module native deps —
 # os.add_dll_directory() is required. Also keep PATH for child processes/ffmpeg.
-if sys.platform == "win32":
+# Frozen builds ship their own DLLs, so the venv scan is skipped there.
+if sys.platform == "win32" and not IS_FROZEN:
     _site_packages = os.path.join(sys.prefix, "Lib", "site-packages")
     _venv_site_packages = os.path.join(project_root, "venv", "Lib", "site-packages")
     for _sp in (_site_packages, _venv_site_packages):
@@ -36,7 +51,7 @@ if sys.platform == "win32":
 # cannot be set after Python starts, so we use ctypes.CDLL with RTLD_GLOBAL
 # instead. This makes symbols available to onnxruntime when it dlopens its
 # CUDA provider.
-if sys.platform.startswith("linux"):
+if sys.platform.startswith("linux") and not IS_FROZEN:
     import ctypes
     import glob
     _py_lib = f"python{sys.version_info.major}.{sys.version_info.minor}"
@@ -66,10 +81,13 @@ if sys.platform.startswith("linux"):
                     pass
         break
 
-from modules import platform_info
-platform_info.print_banner()
-
-from modules import core
-
 if __name__ == '__main__':
+    # Required for frozen Windows/macOS builds: child processes spawned via
+    # multiprocessing would otherwise re-run the whole app.
+    multiprocessing.freeze_support()
+
+    from modules import platform_info
+    platform_info.print_banner()
+
+    from modules import core
     core.run()

@@ -189,8 +189,12 @@ def pre_check() -> bool:
     if sys.version_info < (3, 9):
         update_status('Python version is not supported - please upgrade to 3.9 or higher.')
         return False
-    if not shutil.which('ffmpeg'):
-        update_status('ffmpeg is not installed.')
+    from modules.utilities import find_binary
+    if not find_binary('ffmpeg'):
+        update_status(
+            'ffmpeg was not found. Install ffmpeg and make sure it is on your '
+            'PATH, or place the ffmpeg binary next to the application.'
+        )
         return False
     return True
 

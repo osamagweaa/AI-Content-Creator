@@ -96,6 +96,46 @@ Users are expected to use this software responsibly and legally. If using a real
   <video src="https://github.com/user-attachments/assets/2e9b9b82-fa04-4b70-9f56-b1f68e7672d0" width="450" controls></video>
 </p>
 
+## Standalone Desktop App (Free, Build It Yourself)
+
+You can build Deep-Live-Cam as a self-contained desktop application — no Python, pip, or ffmpeg installation needed by the end user. The result is a double-clickable app for Windows, macOS (Apple Silicon), and Linux.
+
+<details>
+<summary>Click to see how</summary>
+
+### Download a pre-built bundle (CI artifacts)
+
+Every tagged release (and any manual run of the **Desktop App Build** workflow under the repository's *Actions* tab) produces ready-to-use bundles:
+
+- `Deep-Live-Cam-windows-x64.zip` — unzip and run `Deep-Live-Cam.exe`
+- `Deep-Live-Cam-macos-arm64.zip` — unzip and open `Deep-Live-Cam.app` (right-click → Open the first time, since the app is unsigned)
+- `Deep-Live-Cam-linux-x86_64.tar.gz` — extract and run `Deep-Live-Cam/Deep-Live-Cam`
+
+### Build locally
+
+```bash
+# Windows (PowerShell)
+powershell -ExecutionPolicy Bypass -File packaging\build.ps1
+
+# macOS / Linux
+packaging/build.sh
+```
+
+The script creates a build virtualenv, installs dependencies plus PyInstaller, generates the app icon, downloads a static ffmpeg/ffprobe to bundle, and produces the archive in `dist/`.
+
+### Notes
+
+- **First launch downloads models** (~600MB total: `inswapper_128.onnx`, face detection models) into a per-user data folder:
+  - Windows: `%LOCALAPPDATA%\Deep-Live-Cam\models`
+  - macOS: `~/Library/Application Support/Deep-Live-Cam/models`
+  - Linux: `~/.local/share/deep-live-cam/models`
+- Settings (`switch_states.json`) are stored in the same per-user folder.
+- ffmpeg/ffprobe are bundled inside the app; if missing, the app falls back to the system `PATH`.
+- The bundles run on **CPU** (and **CoreML** on Apple Silicon). For NVIDIA CUDA or DirectML GPU acceleration, run from source as described below.
+- The bundles are unsigned, so Windows SmartScreen / macOS Gatekeeper will show a warning on first launch.
+
+</details>
+
 ## Installation (Manual)
 
 **Please be aware that the installation requires technical skills and is not for beginners. Consider downloading the quickstart version.**
