@@ -14,13 +14,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-22.04
+          - os: ubuntu-24.04
             artifact: Deep-Live-Cam-linux-x86_64
             archive: dist/Deep-Live-Cam-linux-x86_64.tar.gz
-          - os: macos-14
+          - os: macos-15
             artifact: Deep-Live-Cam-macos-arm64
             archive: dist/Deep-Live-Cam-macos-arm64.zip
-          - os: windows-2022
+          - os: windows-2025
             artifact: Deep-Live-Cam-windows-x64
             archive: dist/Deep-Live-Cam-windows-x64.zip
     steps:
