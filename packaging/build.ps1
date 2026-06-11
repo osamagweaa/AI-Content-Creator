@@ -27,6 +27,15 @@ python -m pip install --upgrade pip
 if ($LASTEXITCODE -ne 0) { throw "pip upgrade failed" }
 pip install -r requirements.txt
 if ($LASTEXITCODE -ne 0) { throw "dependency install failed" }
+
+# Ship DirectML instead of the CUDA build of onnxruntime: it accelerates
+# inference on ANY DirectX 12 GPU (NVIDIA, AMD, Intel iGPUs) without CUDA
+# runtime DLLs, and falls back to CPU automatically when no GPU is present.
+Write-Host "==> Swapping onnxruntime-gpu for onnxruntime-directml"
+pip uninstall -y onnxruntime onnxruntime-gpu
+pip install onnxruntime-directml==1.23.0
+if ($LASTEXITCODE -ne 0) { throw "onnxruntime-directml install failed" }
+
 pip install pyinstaller static-ffmpeg
 if ($LASTEXITCODE -ne 0) { throw "build tool install failed" }
 

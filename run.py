@@ -16,6 +16,32 @@ if IS_FROZEN:
     for _p in (_ffmpeg_bin, project_root):
         if os.path.isdir(_p):
             os.environ["PATH"] = _p + os.pathsep + os.environ.get("PATH", "")
+
+    # In windowed (no-console) builds, sys.stdout/sys.stderr are None.
+    # Python's print() tolerates that, but libraries like tqdm crash on it
+    # ("'NoneType' object has no attribute 'write'"). Route both streams to
+    # a log file in the user data dir, which also aids field debugging.
+    if sys.stdout is None or sys.stderr is None:
+        try:
+            from modules.paths import USER_DATA_DIR
+
+            os.makedirs(USER_DATA_DIR, exist_ok=True)
+            _log_file = open(
+                os.path.join(USER_DATA_DIR, "app.log"),
+                "a",
+                buffering=1,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if sys.stdout is None:
+                sys.stdout = _log_file
+            if sys.stderr is None:
+                sys.stderr = _log_file
+        except OSError:
+            # Last resort: silence the streams instead of crashing later.
+            _devnull = open(os.devnull, "w", encoding="utf-8")
+            sys.stdout = sys.stdout or _devnull
+            sys.stderr = sys.stderr or _devnull
 else:
     # Add the project root to PATH so bundled ffmpeg/ffprobe are found
     project_root = os.path.dirname(os.path.abspath(__file__))

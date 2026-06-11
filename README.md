@@ -129,9 +129,9 @@ The script creates a build virtualenv, installs dependencies plus PyInstaller, g
   - Windows: `%LOCALAPPDATA%\Deep-Live-Cam\models`
   - macOS: `~/Library/Application Support/Deep-Live-Cam/models`
   - Linux: `~/.local/share/deep-live-cam/models`
-- Settings (`switch_states.json`) are stored in the same per-user folder.
+- Settings (`switch_states.json`) and the app log (`app.log`) are stored in the same per-user folder.
 - ffmpeg/ffprobe are bundled inside the app; if missing, the app falls back to the system `PATH`.
-- The bundles run on **CPU** (and **CoreML** on Apple Silicon). For NVIDIA CUDA or DirectML GPU acceleration, run from source as described below.
+- GPU acceleration in the bundles: **DirectML** on Windows (any DirectX 12 GPU — NVIDIA, AMD, Intel iGPU; falls back to CPU), **CoreML** on Apple Silicon, **CPU** on Linux. For NVIDIA CUDA, run from source as described below.
 - The bundles are unsigned, so Windows SmartScreen / macOS Gatekeeper will show a warning on first launch.
 
 </details>

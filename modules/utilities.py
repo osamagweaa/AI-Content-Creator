@@ -343,6 +343,8 @@ def conditional_download(download_directory_path: str, urls: List[str]) -> None:
                 unit="B",
                 unit_scale=True,
                 unit_divisor=1024,
+                # No usable stderr in windowed desktop builds — skip the bar.
+                disable=sys.stderr is None,
             ) as progress:
                 with open(download_file_path, "wb") as f:
                     while True:
