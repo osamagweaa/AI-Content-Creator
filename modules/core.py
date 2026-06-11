@@ -17,11 +17,9 @@ try:
 except ImportError:
     HAS_TORCH = False
 import onnxruntime
-try:
-    import tensorflow
-    HAS_TENSORFLOW = True
-except ImportError:
-    HAS_TENSORFLOW = False
+# NOTE: tensorflow is intentionally NOT imported here. It is only needed by
+# the optional NSFW filter (modules.predicter / opennsfw2) and is imported
+# lazily there — loading it eagerly costs hundreds of MB of RAM at startup.
 
 import modules.globals
 import modules.metadata
@@ -163,8 +161,9 @@ def suggest_execution_threads() -> int:
 
 
 def limit_resources() -> None:
-    # prevent tensorflow memory leak
-    if HAS_TENSORFLOW:
+    # prevent tensorflow memory leak (only if the NSFW filter already loaded it)
+    tensorflow = sys.modules.get('tensorflow')
+    if tensorflow is not None:
         gpus = tensorflow.config.experimental.list_physical_devices('GPU')
         for gpu in gpus:
             tensorflow.config.experimental.set_memory_growth(gpu, True)
@@ -189,8 +188,12 @@ def pre_check() -> bool:
     if sys.version_info < (3, 9):
         update_status('Python version is not supported - please upgrade to 3.9 or higher.')
         return False
-    if not shutil.which('ffmpeg'):
-        update_status('ffmpeg is not installed.')
+    from modules.utilities import find_binary
+    if not find_binary('ffmpeg'):
+        update_status(
+            'ffmpeg was not found. Install ffmpeg and make sure it is on your '
+            'PATH, or place the ffmpeg binary next to the application.'
+        )
         return False
     return True
 

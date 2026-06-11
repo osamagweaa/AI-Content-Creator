@@ -7,6 +7,17 @@ from modules.gpu_processing import gpu_cvt_color
 
 from modules.typing import Frame
 
+# Configure tensorflow GPU memory growth at first (lazy) load. This module is
+# only imported when the NSFW filter is enabled, keeping tensorflow out of
+# memory for the common case.
+try:
+    import tensorflow
+
+    for _gpu in tensorflow.config.experimental.list_physical_devices("GPU"):
+        tensorflow.config.experimental.set_memory_growth(_gpu, True)
+except Exception:
+    pass
+
 MAX_PROBABILITY = 0.85
 
 # Preload the model once for efficiency

@@ -5,21 +5,62 @@ import platform
 import shutil
 import ssl
 import subprocess
+import sys
 import urllib
 from pathlib import Path
-from typing import List, Any
+from typing import List, Any, Optional
 from tqdm import tqdm
 
 import modules.globals
+from modules.paths import BUNDLE_DIR, IS_FROZEN
 
 TEMP_FILE = "temp.mp4"
 TEMP_DIRECTORY = "temp"
+
+_BINARY_CACHE: dict = {}
+
+
+def find_binary(name: str) -> Optional[str]:
+    """Resolve an external binary (ffmpeg/ffprobe) to an absolute path.
+
+    Bundled copies shipped inside a frozen desktop build take priority;
+    otherwise the system ``PATH`` is searched. Returns ``None`` when the
+    binary cannot be found.
+    """
+    if name in _BINARY_CACHE:
+        return _BINARY_CACHE[name]
+    exe = f"{name}.exe" if sys.platform == "win32" else name
+    candidates = []
+    if IS_FROZEN:
+        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+        candidates = [
+            os.path.join(BUNDLE_DIR, "ffmpeg-bin", exe),
+            os.path.join(BUNDLE_DIR, exe),
+            os.path.join(exe_dir, exe),
+        ]
+    resolved = None
+    for candidate in candidates:
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            resolved = candidate
+            break
+    if resolved is None:
+        resolved = shutil.which(name)
+    _BINARY_CACHE[name] = resolved
+    return resolved
+
+
+def get_ffmpeg() -> str:
+    return find_binary("ffmpeg") or "ffmpeg"
+
+
+def get_ffprobe() -> str:
+    return find_binary("ffprobe") or "ffprobe"
 
 
 def run_ffmpeg(args: List[str]) -> bool:
     """Run ffmpeg with hardware acceleration and optimized settings."""
     commands = [
-        "ffmpeg",
+        get_ffmpeg(),
         "-hide_banner",
         "-hwaccel", "auto",  # Auto-detect hardware acceleration
         "-hwaccel_output_format", "auto",  # Use hardware format when possible
@@ -41,7 +82,7 @@ def run_ffmpeg(args: List[str]) -> bool:
 
 def detect_fps(target_path: str) -> float:
     command = [
-        "ffprobe",
+        get_ffprobe(),
         "-v",
         "error",
         "-select_streams",
@@ -302,6 +343,8 @@ def conditional_download(download_directory_path: str, urls: List[str]) -> None:
                 unit="B",
                 unit_scale=True,
                 unit_divisor=1024,
+                # No usable stderr in windowed desktop builds — skip the bar.
+                disable=sys.stderr is None,
             ) as progress:
                 with open(download_file_path, "wb") as f:
                     while True:
@@ -319,7 +362,7 @@ def resolve_relative_path(path: str) -> str:
 def get_video_dimensions(target_path: str) -> tuple:
     """Get video width and height using ffprobe."""
     command = [
-        "ffprobe", "-v", "error",
+        get_ffprobe(), "-v", "error",
         "-select_streams", "v:0",
         "-show_entries", "stream=width,height",
         "-of", "csv=p=0:s=x",
@@ -335,7 +378,7 @@ def estimate_frame_count(target_path: str, fps: float = None) -> int:
     if fps is None:
         fps = detect_fps(target_path)
     command = [
-        "ffprobe", "-v", "error",
+        get_ffprobe(), "-v", "error",
         "-show_entries", "format=duration",
         "-of", "csv=p=0",
         target_path,
