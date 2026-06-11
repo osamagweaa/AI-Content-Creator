@@ -103,13 +103,70 @@ You can build Deep-Live-Cam as a self-contained desktop application — no Pytho
 <details>
 <summary>Click to see how</summary>
 
-### Download a pre-built bundle (CI artifacts)
+### Step 1 — Get the app
 
-Every tagged release (and any manual run of the **Desktop App Build** workflow under the repository's *Actions* tab) produces ready-to-use bundles:
+Download a pre-built bundle from the repository's **Releases** page (every tagged release, and any manual run of the **Desktop App Build** workflow under *Actions*, produces them):
 
-- `Deep-Live-Cam-windows-x64.zip` — unzip and run `Deep-Live-Cam.exe`
-- `Deep-Live-Cam-macos-arm64.zip` — unzip and open `Deep-Live-Cam.app` (right-click → Open the first time, since the app is unsigned)
-- `Deep-Live-Cam-linux-x86_64.tar.gz` — extract and run `Deep-Live-Cam/Deep-Live-Cam`
+| Platform | File | Run |
+|---|---|---|
+| Windows 10/11 (x64) | `Deep-Live-Cam-windows-x64.zip` | unzip → `Deep-Live-Cam.exe` |
+| macOS (Apple Silicon) | `Deep-Live-Cam-macos-arm64.zip` | unzip → `Deep-Live-Cam.app` |
+| Linux (x86_64) | `Deep-Live-Cam-linux-x86_64.tar.gz` | extract → `Deep-Live-Cam/Deep-Live-Cam` |
+
+### Step 2 — First launch
+
+The bundles are unsigned, so the OS will warn you once:
+
+- **Windows**: SmartScreen shows "Windows protected your PC" → click **More info** → **Run anyway**.
+- **macOS**: right-click the app → **Open** → **Open** (instead of double-clicking, the first time only).
+- **Linux**: no warning; if it doesn't start, make sure the binary is executable (`chmod +x Deep-Live-Cam/Deep-Live-Cam`).
+
+On first launch the app downloads the AI models (~600 MB). **There is no progress window** — the main window appears after the download completes, so give it a few minutes on the first run. Download progress is written to `app.log` (locations below).
+
+### Step 3 — Use it
+
+**Live webcam mode:**
+
+1. Click **Select a face** and pick a clear, front-facing photo of the face you want to wear.
+2. In the **Camera** section, choose your webcam from the dropdown.
+3. Click **Live** and wait 10–30 seconds for the preview window (models load into memory on first use).
+4. To stream the result into Zoom/Discord/OBS, capture the preview window with OBS and use its Virtual Camera.
+
+**Image or video file mode:**
+
+1. Click **Select a face** (the source face).
+2. Click **Select a target** and pick the image or video to swap onto.
+3. Click **Start**. The output is written next to the target file; progress is shown in the status bar.
+
+Useful options: **Many faces** swaps every detected face; **Mouth Mask** keeps your original mouth movement (more natural speech); **Face Enhancer** improves quality at the cost of speed.
+
+### Performance expectations
+
+- The face swap runs on your GPU when possible: **DirectML** on Windows (any DirectX 12 GPU — NVIDIA, AMD, Intel iGPU), **CoreML** on Apple Silicon, **CPU** on Linux bundles.
+- A dedicated GPU and 16 GB+ RAM give a smooth live experience. On integrated GPUs (e.g. Intel Iris Xe) expect modest frame rates, and on 8 GB RAM close other apps first.
+- No usable GPU? See "Processing on a cloud GPU server" below.
+
+### Troubleshooting
+
+- **App seems frozen on first launch** → it's downloading models; check progress in `app.log` (locations below).
+- **Something crashed / weird behavior** → read `app.log` and open an issue with its contents.
+- **Model download keeps failing** (offline machine, proxy) → download [inswapper_128.onnx](https://huggingface.co/hacksider/deep-live-cam/resolve/main/inswapper_128.onnx) manually and place it in the models folder listed below, then restart the app.
+- **Live preview is black** → check the OS camera permission (Windows: Settings → Privacy → Camera → allow desktop apps; macOS: System Settings → Privacy & Security → Camera).
+
+### Processing on a cloud GPU server (no local GPU)
+
+For fast video-file processing without local GPU hardware, rent an NVIDIA VM (AWS g4dn/g5, GCP T4/L4, Paperspace, Lambda — roughly $0.30–1.00/hour) and run:
+
+```bash
+git clone <this-repo-url> deep-live-cam && cd deep-live-cam
+bash packaging/cloud-gpu-setup.sh
+
+source venv/bin/activate
+python run.py -s face.jpg -t input.mp4 -o output.mp4 \
+    --execution-provider cuda --keep-fps
+```
+
+The script installs all system and Python dependencies and verifies CUDA before you spend GPU time. Remember to stop the instance when done — billing is hourly. (Live webcam over a remote VM is not recommended; camera forwarding latency makes it impractical.)
 
 ### Build locally
 
@@ -123,17 +180,17 @@ packaging/build.sh
 
 The script creates a build virtualenv, installs dependencies plus PyInstaller, generates the app icon, downloads a static ffmpeg/ffprobe to bundle, and produces the archive in `dist/`.
 
-### Notes
+### Where the app keeps its files
 
-- **First launch downloads models** (~600MB total: `inswapper_128.onnx`, face detection models) into a per-user data folder:
-  - Windows: `%LOCALAPPDATA%\Deep-Live-Cam\models`
-  - macOS: `~/Library/Application Support/Deep-Live-Cam/models`
-  - Linux: `~/.local/share/deep-live-cam/models`
-- Settings (`switch_states.json`) and the app log (`app.log`) are stored in the same per-user folder.
-- ffmpeg/ffprobe are bundled inside the app; if missing, the app falls back to the system `PATH`.
-- GPU acceleration in the bundles: **DirectML** on Windows (any DirectX 12 GPU — NVIDIA, AMD, Intel iGPU; falls back to CPU), **CoreML** on Apple Silicon, **CPU** on Linux. For NVIDIA CUDA, run from source as described below.
-- The bundles are unsigned, so Windows SmartScreen / macOS Gatekeeper will show a warning on first launch.
-- No GPU locally? `packaging/cloud-gpu-setup.sh` sets up a rented NVIDIA cloud VM (AWS/GCP/Paperspace/Lambda) for fast headless video processing. Status, performance notes, and upgrade paths are logged in [docs/desktop-app-notes.md](docs/desktop-app-notes.md).
+Models (~600 MB, downloaded on first launch), settings (`switch_states.json`), and the log (`app.log`) live in a per-user data folder — the install folder itself is never written to:
+
+| Platform | Data folder |
+|---|---|
+| Windows | `%LOCALAPPDATA%\Deep-Live-Cam` |
+| macOS | `~/Library/Application Support/Deep-Live-Cam` |
+| Linux | `~/.local/share/deep-live-cam` |
+
+ffmpeg/ffprobe are bundled inside the app; if missing, the app falls back to the system `PATH`. For NVIDIA CUDA acceleration, run from source as described below. Full status, performance notes, and upgrade paths are logged in [docs/desktop-app-notes.md](docs/desktop-app-notes.md).
 
 </details>
 
