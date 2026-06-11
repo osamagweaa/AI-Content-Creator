@@ -1520,12 +1520,26 @@ class _Window:
         self._app.exec()
 
 
+def _sanitize_qt_plugin_env() -> None:
+    """Drop the Qt5 plugin path injected by opencv-python on Linux.
+
+    cv2's ``config-3.py`` sets ``QT_QPA_PLATFORM_PLUGIN_PATH`` to its own
+    bundled Qt5 plugins, which breaks PySide6 (Qt6) platform plugin
+    loading — most visibly in frozen desktop builds.
+    """
+    plugin_path = os.environ.get("QT_QPA_PLATFORM_PLUGIN_PATH", "")
+    if os.path.join("cv2", "qt") in plugin_path:
+        os.environ.pop("QT_QPA_PLATFORM_PLUGIN_PATH", None)
+        os.environ.pop("QT_QPA_FONTDIR", None)
+
+
 def init(
     start: Callable[[], None], destroy: Callable[[], None], lang: str
 ) -> _Window:
     global _APP, _MAIN, _PREVIEW, _LANG, _BRIDGE
 
     _LANG = LanguageManager(lang)
+    _sanitize_qt_plugin_env()
     if QApplication.instance() is None:
         _APP = QApplication(sys.argv)
     else:

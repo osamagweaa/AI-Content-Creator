@@ -53,9 +53,10 @@ if ffmpeg_bin_dir and os.path.isdir(ffmpeg_bin_dir):
             binaries.append((full, "ffmpeg-bin"))
 
 # Trim libraries that are pulled in transitively but never used at runtime.
+# Note: matplotlib must stay — insightface imports it at package-import time
+# (insightface.thirdparty.face3d.mesh.vis).
 excludes = [
     "tkinter",
-    "matplotlib",
     "IPython",
     "jupyter",
     "pytest",
@@ -94,6 +95,16 @@ a = Analysis(
     excludes=excludes,
     noarchive=False,
 )
+
+# opencv-python ships private Qt5 plugins/fonts that conflict with
+# PySide6's Qt6 at runtime (cv2's config sets QT_QPA_PLATFORM_PLUGIN_PATH).
+# They are never needed: all GUI windows are PySide6.
+def _not_cv2_qt(entry):
+    dest = entry[0].replace("\\", "/")
+    return not dest.startswith("cv2/qt/")
+
+a.binaries = [entry for entry in a.binaries if _not_cv2_qt(entry)]
+a.datas = [entry for entry in a.datas if _not_cv2_qt(entry)]
 
 pyz = PYZ(a.pure)
 
