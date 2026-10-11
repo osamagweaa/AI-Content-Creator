@@ -29,3 +29,10 @@ switch_states.json
 install.bat
 /.claude
 *.bat
+
+# Desktop app build outputs
+/build/
+/dist/
+/.venv-build/
+packaging/icons/
+packaging/ffmpeg-bin/

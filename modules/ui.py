@@ -315,7 +315,10 @@ def save_switch_states():
         "mouth_mask_size": modules.globals.mouth_mask_size,
     }
     try:
-        with open("switch_states.json", "w") as f:
+        from modules.paths import SETTINGS_DIR, ensure_writable_dir
+
+        ensure_writable_dir(SETTINGS_DIR)
+        with open(os.path.join(SETTINGS_DIR, "switch_states.json"), "w") as f:
             json.dump(state, f)
     except OSError:
         pass
@@ -323,7 +326,9 @@ def save_switch_states():
 
 def load_switch_states():
     try:
-        with open("switch_states.json", "r") as f:
+        from modules.paths import SETTINGS_DIR
+
+        with open(os.path.join(SETTINGS_DIR, "switch_states.json"), "r") as f:
             state = json.load(f)
         modules.globals.keep_fps = state.get("keep_fps", True)
         modules.globals.keep_audio = state.get("keep_audio", True)
@@ -1515,12 +1520,26 @@ class _Window:
         self._app.exec()
 
 
+def _sanitize_qt_plugin_env() -> None:
+    """Drop the Qt5 plugin path injected by opencv-python on Linux.
+
+    cv2's ``config-3.py`` sets ``QT_QPA_PLATFORM_PLUGIN_PATH`` to its own
+    bundled Qt5 plugins, which breaks PySide6 (Qt6) platform plugin
+    loading — most visibly in frozen desktop builds.
+    """
+    plugin_path = os.environ.get("QT_QPA_PLATFORM_PLUGIN_PATH", "")
+    if os.path.join("cv2", "qt") in plugin_path:
+        os.environ.pop("QT_QPA_PLATFORM_PLUGIN_PATH", None)
+        os.environ.pop("QT_QPA_FONTDIR", None)
+
+
 def init(
     start: Callable[[], None], destroy: Callable[[], None], lang: str
 ) -> _Window:
     global _APP, _MAIN, _PREVIEW, _LANG, _BRIDGE
 
     _LANG = LanguageManager(lang)
+    _sanitize_qt_plugin_env()
     if QApplication.instance() is None:
         _APP = QApplication(sys.argv)
     else:
