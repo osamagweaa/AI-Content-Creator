@@ -1,14 +1,13 @@
 import glob
 import mimetypes
 import os
-import platform
 import shutil
 import ssl
 import subprocess
 import sys
-import urllib
+import urllib.request
 from pathlib import Path
-from typing import List, Any, Optional
+from typing import List, Any, Callable, Optional
 from tqdm import tqdm
 
 import modules.globals
@@ -320,39 +319,79 @@ def is_video(video_path: str) -> bool:
     return False
 
 
+DownloadProgressHook = Callable[[str, int, int], None]
+
+# Optional observer for model downloads, called as hook(file_name, done, total)
+# (total is 0 when the server sends no Content-Length). The GUI installs one to
+# drive a progress dialog; the CLI relies on tqdm.
+_download_progress_hook: Optional[DownloadProgressHook] = None
+
+
+def set_download_progress_hook(hook: Optional[DownloadProgressHook]) -> None:
+    global _download_progress_hook
+    _download_progress_hook = hook
+
+
+def _ssl_context() -> ssl.SSLContext:
+    # System trust store plus certifi's bundle: fixes python.org macOS installs
+    # that ship without system certs, without turning verification off, and
+    # keeps CAs only present in the OS store (corporate proxies) working.
+    ctx = ssl.create_default_context()
+    try:
+        import certifi
+
+        ctx.load_verify_locations(cafile=certifi.where())
+    except (ImportError, OSError):
+        pass
+    return ctx
+
+
 def conditional_download(download_directory_path: str, urls: List[str]) -> None:
-    if not os.path.exists(download_directory_path):
-        os.makedirs(download_directory_path)
+    os.makedirs(download_directory_path, exist_ok=True)
     for url in urls:
-        download_file_path = os.path.join(
-            download_directory_path, os.path.basename(url)
-        )
-        if not os.path.exists(download_file_path):
+        file_name = os.path.basename(url)
+        download_file_path = os.path.join(download_directory_path, file_name)
+        if os.path.exists(download_file_path):
+            continue
+        # Stream into a .part file and rename only once complete, so an
+        # interrupted download never leaves a truncated model behind that
+        # the exists() check above would then trust forever.
+        part_path = download_file_path + ".part"
+        try:
             request = urllib.request.Request(url)
-            
-            # Create a specific SSL context for macOS to avoid globally disabling verification
-            ctx = None
-            if platform.system().lower() == "darwin":
-                ctx = ssl._create_unverified_context()
-                
-            response = urllib.request.urlopen(request, context=ctx)
-            total = int(response.headers.get("Content-Length", 0))
-            with tqdm(
-                total=total,
-                desc="Downloading",
-                unit="B",
-                unit_scale=True,
-                unit_divisor=1024,
-                # No usable stderr in windowed desktop builds — skip the bar.
-                disable=sys.stderr is None,
-            ) as progress:
-                with open(download_file_path, "wb") as f:
+            with urllib.request.urlopen(request, context=_ssl_context()) as response:
+                total = int(response.headers.get("Content-Length", 0))
+                done = 0
+                hook = _download_progress_hook
+                if hook:
+                    hook(file_name, done, total)
+                with tqdm(
+                    total=total,
+                    desc="Downloading",
+                    unit="B",
+                    unit_scale=True,
+                    unit_divisor=1024,
+                    # No usable stderr in windowed desktop builds — skip the bar.
+                    disable=sys.stderr is None,
+                ) as progress, open(part_path, "wb") as f:
                     while True:
-                        buffer = response.read(8192)
+                        buffer = response.read(1024 * 1024)
                         if not buffer:
                             break
                         f.write(buffer)
+                        done += len(buffer)
                         progress.update(len(buffer))
+                        if hook:
+                            hook(file_name, done, total)
+            if total and done != total:
+                raise IOError(
+                    f"Incomplete download of {file_name}: got {done} of {total} bytes"
+                )
+            os.replace(part_path, download_file_path)
+        except BaseException:
+            if os.path.exists(part_path):
+                os.remove(part_path)
+            raise
 
 
 def resolve_relative_path(path: str) -> str:
