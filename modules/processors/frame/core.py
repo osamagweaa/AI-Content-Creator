@@ -269,10 +269,13 @@ def _run_pipe_pipeline(
     encoder_options: List[str],
 ) -> bool:
     """Run the FFmpeg-pipe read → process → encode pipeline once."""
+    from modules.utilities import get_ffmpeg
+
+    ffmpeg = get_ffmpeg()
 
     # --- Reader: decode source video to raw BGR24 on stdout ---
     reader_cmd = [
-        'ffmpeg', '-hide_banner',
+        ffmpeg, '-hide_banner',
         '-hwaccel', 'auto',
         '-i', target_path,
         '-f', 'rawvideo',
@@ -283,7 +286,7 @@ def _run_pipe_pipeline(
 
     # --- Writer: encode raw BGR24 from stdin ---
     writer_cmd = [
-        'ffmpeg', '-hide_banner',
+        ffmpeg, '-hide_banner',
         '-f', 'rawvideo',
         '-pix_fmt', 'bgr24',
         '-s', f'{width}x{height}',
