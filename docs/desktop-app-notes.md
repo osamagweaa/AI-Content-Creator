@@ -33,6 +33,8 @@ Artifacts are attached to draft GitHub releases per tag. **Use rc3 or later.**
 | Bug | Root cause | Fix |
 |---|---|---|
 | Crash on first run: `'NoneType' object has no attribute 'write'` | Windowed PyInstaller builds set `sys.stdout`/`stderr` to `None`; tqdm writes to stderr during model download | `run.py` redirects both streams to `app.log` in the user data dir; tqdm disabled when stderr is absent |
+| Interrupted first-run download bricks the app until the model file is deleted by hand | `conditional_download` wrote straight to the final path; the `exists()` check then trusted the truncated file | Stream to `<file>.part`, verify size, atomic `os.replace`; `.part` removed on any failure |
+| macOS model downloads skipped TLS verification | `ssl._create_unverified_context()` used to work around missing certs | System trust store + certifi bundle, verification always on |
 | Linux frozen app aborts under X11 | opencv-python sets `QT_QPA_PLATFORM_PLUGIN_PATH` to its bundled **Qt5** plugins, breaking PySide6 (**Qt6**) | Env var sanitised before `QApplication`; `cv2/qt` stripped from the bundle |
 | `ModuleNotFoundError: matplotlib` in frozen app | insightface imports matplotlib at package-import time (`face3d/mesh/vis.py`) | matplotlib must stay in the bundle (removed from the spec's excludes) |
 
@@ -97,5 +99,5 @@ Local builds: `packaging/build.sh` (Linux/macOS) or `packaging\build.ps1`
 - **Bundle size** — Linux ~1.3 GB compressed (TensorFlow + ONNX Runtime
   dominate). Could shrink by making the NSFW filter's TensorFlow an optional
   download, at the cost of shipping the safety feature separately.
-- **First-launch model download (~600 MB)** has no GUI progress indicator —
-  progress goes to `app.log`. A download dialog would improve UX.
+- ~~First-launch model download has no GUI progress indicator~~ — fixed:
+  `ui.run_pre_checks()` shows a progress dialog with Retry on failure.

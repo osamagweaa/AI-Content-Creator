@@ -329,13 +329,22 @@ def destroy(to_quit=True) -> None:
         quit()
 
 
-def run() -> None:
-    parse_args()
+def run_pre_checks() -> bool:
     if not pre_check():
-        return
+        return False
     for frame_processor in get_frame_processors_modules(modules.globals.frame_processors):
         if not frame_processor.pre_check():
-            return
+            return False
+    return True
+
+
+def run() -> None:
+    parse_args()
+    # GUI: first launch downloads ~600 MB of models; show progress instead of
+    # a silent multi-minute wait before the window appears.
+    checks_passed = run_pre_checks() if modules.globals.headless else ui.run_pre_checks(run_pre_checks)
+    if not checks_passed:
+        return
     # Pre-load face analyser in main thread before GUI starts
     #from modules.face_analyser import get_face_analyser
     #get_face_analyser()

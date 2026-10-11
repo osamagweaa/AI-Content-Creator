@@ -25,11 +25,13 @@ import numpy as np
 import requests
 from PIL import Image, ImageOps
 from PySide6.QtCore import (
+    QEventLoop,
     QObject,
     QThread,
     QTimer,
     Qt,
     Signal,
+    Slot,
 )
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
@@ -43,6 +45,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMessageBox,
+    QProgressDialog,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -72,6 +76,7 @@ from modules.utilities import (
     has_image_extension,
     is_image,
     is_video,
+    set_download_progress_hook,
 )
 from modules.video_capture import VideoCapturer
 
@@ -1531,6 +1536,97 @@ def _sanitize_qt_plugin_env() -> None:
     if os.path.join("cv2", "qt") in plugin_path:
         os.environ.pop("QT_QPA_PLATFORM_PLUGIN_PATH", None)
         os.environ.pop("QT_QPA_FONTDIR", None)
+
+
+# ─── start-up checks / first-launch model download ───────────────────────
+
+
+class _PreCheckWorker(QThread):
+    """Runs the blocking start-up checks off the UI thread."""
+
+    progress = Signal(str, int, int)
+    done = Signal(bool, str)  # (checks passed, error message or "")
+
+    def __init__(self, check: Callable[[], bool]):
+        super().__init__()
+        self._check = check
+
+    def run(self) -> None:
+        set_download_progress_hook(self.progress.emit)
+        try:
+            self.done.emit(bool(self._check()), "")
+        except Exception as e:
+            self.done.emit(False, str(e) or type(e).__name__)
+        finally:
+            set_download_progress_hook(None)
+
+
+class _PreCheckDialog(QObject):
+    """Lives on the UI thread so worker signals are delivered as queued calls."""
+
+    def __init__(self, loop: QEventLoop):
+        super().__init__()
+        self._loop = loop
+        self.passed = False
+        self.error = ""
+        self.dialog = QProgressDialog(_("Preparing models..."), None, 0, 0)
+        self.dialog.setWindowTitle(modules.metadata.name)
+        self.dialog.setWindowModality(Qt.ApplicationModal)
+        self.dialog.setAutoClose(False)
+        self.dialog.setAutoReset(False)
+        # Only pops up when there is real work (i.e. a download), not on
+        # every launch where the models are already present.
+        self.dialog.setMinimumDuration(400)
+
+    @Slot(str, int, int)
+    def on_progress(self, file_name: str, done: int, total: int) -> None:
+        mb = 1024 * 1024
+        if total:
+            # QProgressDialog is int32-based; count in MB to stay in range.
+            self.dialog.setMaximum(max(1, total // mb))
+            self.dialog.setValue(done // mb)
+            self.dialog.setLabelText(
+                f"{_('Downloading')} {file_name}\n{done // mb} / {total // mb} MB"
+            )
+        else:
+            self.dialog.setMaximum(0)
+            self.dialog.setLabelText(f"{_('Downloading')} {file_name}\n{done // mb} MB")
+
+    @Slot(bool, str)
+    def on_done(self, passed: bool, error: str) -> None:
+        self.passed = passed
+        self.error = error
+        self.dialog.close()
+        self._loop.quit()
+
+
+def run_pre_checks(check: Callable[[], bool]) -> bool:
+    """Run start-up checks (incl. first-launch model downloads, ~600 MB)
+    behind a progress dialog, with Retry on failure. Returns check's result.
+    """
+    _sanitize_qt_plugin_env()
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+    while True:
+        loop = QEventLoop()
+        ui = _PreCheckDialog(loop)
+        worker = _PreCheckWorker(check)
+        worker.progress.connect(ui.on_progress)
+        worker.done.connect(ui.on_done)
+        worker.start()
+        loop.exec()
+        worker.wait()
+        if not ui.error:
+            return ui.passed
+        answer = QMessageBox.critical(
+            None,
+            modules.metadata.name,
+            f"{_('Failed to download the required models.')}\n\n{ui.error}\n\n"
+            f"{_('Check your internet connection and try again.')}",
+            QMessageBox.Retry | QMessageBox.Cancel,
+        )
+        if answer != QMessageBox.Retry:
+            return False
 
 
 def init(
