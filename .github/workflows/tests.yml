@@ -1,0 +1,29 @@
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  unittest:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      # Most tests stub the heavy ML/GUI deps, but test_ui_live_preview drives
+      # the real Qt widgets (offscreen), so modules.ui and its imports must load.
+      # Versions follow requirements.txt; CPU onnxruntime stands in for -gpu.
+      - name: Install Qt runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+      - name: Install test dependencies
+        run: >-
+          pip install
+          "numpy>=2.0,<3" opencv-python-headless==4.14.0.94 "PySide6>=6.7,<7"
+          pillow==12.3.0 "tqdm>=4.66.3" "certifi>=2024.7.4" psutil==7.2.2
+          onnx==1.22.0 insightface==0.7.3 onnxruntime cv2_enumerate_cameras==1.3.3
+      - run: python -m unittest discover -s tests -v
+        env:
+          QT_QPA_PLATFORM: offscreen

@@ -6,7 +6,7 @@ import subprocess
 import sys
 import urllib.request
 from pathlib import Path
-from typing import List, Any, Optional
+from typing import List, Any, Callable, Optional
 from tqdm import tqdm
 
 import modules.globals
@@ -330,6 +330,19 @@ def is_video(video_path: str) -> bool:
     return False
 
 
+DownloadProgressHook = Callable[[str, int, int], None]
+
+# Optional observer for model downloads, called as hook(file_name, done, total)
+# (total is 0 when the server sends no Content-Length). The GUI installs one to
+# drive a progress dialog; the CLI relies on tqdm.
+_download_progress_hook: Optional[DownloadProgressHook] = None
+
+
+def set_download_progress_hook(hook: Optional[DownloadProgressHook]) -> None:
+    global _download_progress_hook
+    _download_progress_hook = hook
+
+
 def conditional_download(download_directory_path: str, urls: List[str]) -> None:
     os.makedirs(download_directory_path, exist_ok=True)
     for url in urls:
@@ -350,6 +363,9 @@ def conditional_download(download_directory_path: str, urls: List[str]) -> None:
             ) as response:
                 total = int(response.headers.get("Content-Length", 0))
                 done = 0
+                hook = _download_progress_hook
+                if hook:
+                    hook(file_name, done, total)
                 with tqdm(
                     total=total,
                     desc="Downloading",
@@ -366,6 +382,8 @@ def conditional_download(download_directory_path: str, urls: List[str]) -> None:
                         f.write(buffer)
                         done += len(buffer)
                         progress.update(len(buffer))
+                        if hook:
+                            hook(file_name, done, total)
             if total and done != total:
                 raise IOError(
                     f"Incomplete download of {file_name}: got {done} of {total} bytes"
