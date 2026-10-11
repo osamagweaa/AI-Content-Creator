@@ -1,17 +1,16 @@
 import glob
 import mimetypes
 import os
-import platform
 import shutil
-import ssl
 import subprocess
 import sys
-import urllib
+import urllib.request
 from pathlib import Path
 from typing import List, Any, Optional
 from tqdm import tqdm
 
 import modules.globals
+from modules.model_downloader import _ssl_context
 from modules.paths import BUNDLE_DIR, IS_FROZEN
 
 TEMP_FILE = "temp.mp4"
@@ -93,11 +92,17 @@ def detect_fps(target_path: str) -> float:
         "default=noprint_wrappers=1:nokey=1",
         target_path,
     ]
-    output = subprocess.check_output(command).decode().strip().split("/")
     try:
+        output = subprocess.check_output(command, encoding="utf-8").strip().split("/")
         numerator, denominator = map(int, output)
         return numerator / denominator
-    except Exception:
+    except (
+        subprocess.CalledProcessError,
+        OSError,
+        UnicodeDecodeError,
+        ValueError,
+        ZeroDivisionError,
+    ):
         pass
     return 30.0
 
@@ -303,11 +308,16 @@ def clean_temp(target_path: str) -> None:
 
 
 def has_image_extension(image_path: str) -> bool:
-    return image_path.lower().endswith(("png", "jpg", "jpeg"))
+    # splitext so only the real extension counts (e.g. "photo.png.bak" is not
+    # an image); the set is centralized in globals to stay in sync with dialogs.
+    return os.path.splitext(image_path)[1].lower() in modules.globals.IMAGE_EXTENSIONS
 
 
 def is_image(image_path: str) -> bool:
     if image_path and os.path.isfile(image_path):
+        # Extension check first — Windows mimetypes doesn't always register webp
+        if has_image_extension(image_path):
+            return True
         mimetype, _ = mimetypes.guess_type(image_path)
         return bool(mimetype and mimetype.startswith("image/"))
     return False
@@ -321,38 +331,50 @@ def is_video(video_path: str) -> bool:
 
 
 def conditional_download(download_directory_path: str, urls: List[str]) -> None:
-    if not os.path.exists(download_directory_path):
-        os.makedirs(download_directory_path)
+    os.makedirs(download_directory_path, exist_ok=True)
     for url in urls:
-        download_file_path = os.path.join(
-            download_directory_path, os.path.basename(url)
-        )
-        if not os.path.exists(download_file_path):
+        file_name = os.path.basename(url)
+        download_file_path = os.path.join(download_directory_path, file_name)
+        if os.path.exists(download_file_path):
+            continue
+        # Stream into a .part file and rename only once complete, so an
+        # interrupted download never leaves a truncated model behind that
+        # the exists() check above would then trust forever.
+        part_path = download_file_path + ".part"
+        try:
             request = urllib.request.Request(url)
-            
-            # Create a specific SSL context for macOS to avoid globally disabling verification
-            ctx = None
-            if platform.system().lower() == "darwin":
-                ctx = ssl._create_unverified_context()
-                
-            response = urllib.request.urlopen(request, context=ctx)
-            total = int(response.headers.get("Content-Length", 0))
-            with tqdm(
-                total=total,
-                desc="Downloading",
-                unit="B",
-                unit_scale=True,
-                unit_divisor=1024,
-                # No usable stderr in windowed desktop builds — skip the bar.
-                disable=sys.stderr is None,
-            ) as progress:
-                with open(download_file_path, "wb") as f:
+            # Verified TLS on every platform; never disable verification here —
+            # model files are executed by the ONNX runtime (#1890).
+            with urllib.request.urlopen(
+                request, context=_ssl_context(), timeout=60
+            ) as response:
+                total = int(response.headers.get("Content-Length", 0))
+                done = 0
+                with tqdm(
+                    total=total,
+                    desc="Downloading",
+                    unit="B",
+                    unit_scale=True,
+                    unit_divisor=1024,
+                    # No usable stderr in windowed desktop builds — skip the bar.
+                    disable=sys.stderr is None,
+                ) as progress, open(part_path, "wb") as f:
                     while True:
-                        buffer = response.read(8192)
+                        buffer = response.read(1024 * 1024)
                         if not buffer:
                             break
                         f.write(buffer)
+                        done += len(buffer)
                         progress.update(len(buffer))
+            if total and done != total:
+                raise IOError(
+                    f"Incomplete download of {file_name}: got {done} of {total} bytes"
+                )
+            os.replace(part_path, download_file_path)
+        except BaseException:
+            if os.path.exists(part_path):
+                os.remove(part_path)
+            raise
 
 
 def resolve_relative_path(path: str) -> str:
