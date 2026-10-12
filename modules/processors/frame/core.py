@@ -126,7 +126,7 @@ def process_video_in_memory(source_path: str, target_path: str, fps: float) -> b
     Returns True on success, False on failure (caller should fall back to the
     disk-based pipeline).
     """
-    import cv2
+    from modules import imread_unicode
     from modules.face_analyser import get_one_face
     from modules.utilities import (
         get_video_dimensions,
@@ -139,7 +139,7 @@ def process_video_in_memory(source_path: str, target_path: str, fps: float) -> b
     # --- Pre-load source face (needed by face_swapper in simple mode) ---
     source_face = None
     if source_path and os.path.exists(source_path):
-        source_img = cv2.imread(source_path)
+        source_img = imread_unicode(source_path)
         if source_img is not None:
             source_face = get_one_face(source_img)
             del source_img
@@ -269,10 +269,13 @@ def _run_pipe_pipeline(
     encoder_options: List[str],
 ) -> bool:
     """Run the FFmpeg-pipe read → process → encode pipeline once."""
+    from modules.utilities import get_ffmpeg
+
+    ffmpeg = get_ffmpeg()
 
     # --- Reader: decode source video to raw BGR24 on stdout ---
     reader_cmd = [
-        'ffmpeg', '-hide_banner',
+        ffmpeg, '-hide_banner',
         '-hwaccel', 'auto',
         '-i', target_path,
         '-f', 'rawvideo',
@@ -283,7 +286,7 @@ def _run_pipe_pipeline(
 
     # --- Writer: encode raw BGR24 from stdin ---
     writer_cmd = [
-        'ffmpeg', '-hide_banner',
+        ffmpeg, '-hide_banner',
         '-f', 'rawvideo',
         '-pix_fmt', 'bgr24',
         '-s', f'{width}x{height}',

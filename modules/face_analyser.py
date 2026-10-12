@@ -4,8 +4,8 @@ from typing import Any
 import insightface
 import threading
 
-import cv2
 import modules.globals
+from modules import imread_unicode, imwrite_unicode
 from tqdm import tqdm
 from modules.typing import Frame
 from modules.cluster_analysis import find_cluster_centroids, find_closest_centroid
@@ -15,32 +15,61 @@ from pathlib import Path
 FACE_ANALYSER = None
 FACE_ANALYSER_LOCK = threading.Lock()
 
-DET_SIZE = (640, 640)
+
+def _current_det_size() -> tuple:
+    s = int(getattr(modules.globals, 'det_size', modules.globals.DEFAULT_DET_SIZE))
+    return (s, s)
+
+
+def reset_face_analyser() -> None:
+    """Force re-init on next get_face_analyser() call.
+
+    Called when det_size changes — insightface FaceAnalysis fixes its
+    detection input shape at prepare() time, so a new size requires a
+    fresh prepare() call.
+    """
+    global FACE_ANALYSER
+    with FACE_ANALYSER_LOCK:
+        FACE_ANALYSER = None
 
 
 def get_face_analyser() -> Any:
     """Get face analyser with thread-safe initialization."""
     global FACE_ANALYSER
 
-    if FACE_ANALYSER is None:
+    # Snapshot the global so a concurrent reset_face_analyser() (e.g. a
+    # det_size change from the UI thread mid-Live) can't null it between our
+    # check and the return.
+    analyser = FACE_ANALYSER
+    if analyser is None:
         with FACE_ANALYSER_LOCK:
             # Double-check after acquiring lock
             if FACE_ANALYSER is None:
                 from modules.processors.frame._onnx_enhancer import (
                     build_provider_config,
                 )
+                from modules.model_downloader import ensure_insightface_pack
+
+                ensure_insightface_pack('buffalo_l')
                 providers = build_provider_config()
-                FACE_ANALYSER = insightface.app.FaceAnalysis(
+                analyser = insightface.app.FaceAnalysis(
                     name='buffalo_l',
                     providers=providers,
                     allowed_modules=['detection', 'recognition', 'landmark_2d_106']
                 )
-                FACE_ANALYSER.prepare(ctx_id=0, det_size=DET_SIZE)
-                _optimize_det_model(FACE_ANALYSER, providers)
-    return FACE_ANALYSER
+                det_size = _current_det_size()
+                analyser.prepare(ctx_id=0, det_size=det_size)
+                _optimize_det_model(analyser, providers, det_size)
+                # Publish only after prepare()/optimize() complete, so a
+                # lock-free reader can never observe a half-built analyser
+                # (insightface fixes det shape at prepare() time).
+                FACE_ANALYSER = analyser
+            else:
+                analyser = FACE_ANALYSER
+    return analyser
 
 
-def _optimize_det_model(fa: Any, providers) -> None:
+def _optimize_det_model(fa: Any, providers, det_size: tuple) -> None:
     """Replace the detection model's ONNX session with a CoreML-optimized one.
 
     Folds dynamic Shape→Gather chains into constants (the input size is
@@ -56,7 +85,8 @@ def _optimize_det_model(fa: Any, providers) -> None:
     if model_path is None or not os.path.exists(model_path):
         return
 
-    input_shape = (1, 3, DET_SIZE[1], DET_SIZE[0])
+    ds = det_size
+    input_shape = (1, 3, ds[1], ds[0])
     optimized_path = optimize_for_coreml(model_path, input_shape=input_shape)
     if optimized_path == model_path:
         return
@@ -254,7 +284,7 @@ def add_blank_map() -> Any:
 def get_unique_faces_from_target_image() -> Any:
     try:
         modules.globals.source_target_map = []
-        target_frame = cv2.imread(modules.globals.target_path)
+        target_frame = imread_unicode(modules.globals.target_path)
         many_faces = get_many_faces(target_frame)
         if many_faces is None:
             return None
@@ -290,7 +320,7 @@ def get_unique_faces_from_target_video() -> Any:
 
         i = 0
         for temp_frame_path in tqdm(temp_frame_paths, desc="Extracting face embeddings from frames"):
-            temp_frame = cv2.imread(temp_frame_path)
+            temp_frame = imread_unicode(temp_frame_path)
             many_faces = get_many_faces(temp_frame)
             if many_faces is None:
                 continue
@@ -335,6 +365,9 @@ def default_target_face():
                 best_frame = frame
                 break
 
+        if best_face is None:
+            continue  # No faces detected in this cluster — skip
+
         for frame in map['target_faces_in_frame']:
             for face in frame['faces']:
                 if face['det_score'] > best_face['det_score']:
@@ -343,7 +376,7 @@ def default_target_face():
 
         x_min, y_min, x_max, y_max = best_face['bbox']
 
-        target_frame = cv2.imread(best_frame['location'])
+        target_frame = imread_unicode(best_frame['location'])
         map['target'] = {
                         'cv2' : target_frame[int(y_min):int(y_max), int(x_min):int(x_max)],
                         'face' : best_face
@@ -359,7 +392,7 @@ def dump_faces(centroids: Any, frame_face_embeddings: list):
         Path(temp_directory_path + f"/{i}").mkdir(parents=True, exist_ok=True)
 
         for frame in tqdm(frame_face_embeddings, desc=f"Copying faces to temp/./{i}"):
-            temp_frame = cv2.imread(frame['location'])
+            temp_frame = imread_unicode(frame['location'])
 
             j = 0
             for face in frame['faces']:
@@ -367,5 +400,5 @@ def dump_faces(centroids: Any, frame_face_embeddings: list):
                     x_min, y_min, x_max, y_max = face['bbox']
 
                     if temp_frame[int(y_min):int(y_max), int(x_min):int(x_max)].size > 0:
-                        cv2.imwrite(temp_directory_path + f"/{i}/{frame['frame']}_{j}.png", temp_frame[int(y_min):int(y_max), int(x_min):int(x_max)])
+                        imwrite_unicode(temp_directory_path + f"/{i}/{frame['frame']}_{j}.png", temp_frame[int(y_min):int(y_max), int(x_min):int(x_max)])
                 j += 1

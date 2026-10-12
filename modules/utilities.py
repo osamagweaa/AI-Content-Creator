@@ -2,7 +2,6 @@ import glob
 import mimetypes
 import os
 import shutil
-import ssl
 import subprocess
 import sys
 import urllib.request
@@ -11,6 +10,7 @@ from typing import List, Any, Callable, Optional
 from tqdm import tqdm
 
 import modules.globals
+from modules.model_downloader import _ssl_context
 from modules.paths import BUNDLE_DIR, IS_FROZEN
 
 TEMP_FILE = "temp.mp4"
@@ -92,11 +92,17 @@ def detect_fps(target_path: str) -> float:
         "default=noprint_wrappers=1:nokey=1",
         target_path,
     ]
-    output = subprocess.check_output(command).decode().strip().split("/")
     try:
+        output = subprocess.check_output(command, encoding="utf-8").strip().split("/")
         numerator, denominator = map(int, output)
         return numerator / denominator
-    except Exception:
+    except (
+        subprocess.CalledProcessError,
+        OSError,
+        UnicodeDecodeError,
+        ValueError,
+        ZeroDivisionError,
+    ):
         pass
     return 30.0
 
@@ -302,11 +308,16 @@ def clean_temp(target_path: str) -> None:
 
 
 def has_image_extension(image_path: str) -> bool:
-    return image_path.lower().endswith(("png", "jpg", "jpeg"))
+    # splitext so only the real extension counts (e.g. "photo.png.bak" is not
+    # an image); the set is centralized in globals to stay in sync with dialogs.
+    return os.path.splitext(image_path)[1].lower() in modules.globals.IMAGE_EXTENSIONS
 
 
 def is_image(image_path: str) -> bool:
     if image_path and os.path.isfile(image_path):
+        # Extension check first — Windows mimetypes doesn't always register webp
+        if has_image_extension(image_path):
+            return True
         mimetype, _ = mimetypes.guess_type(image_path)
         return bool(mimetype and mimetype.startswith("image/"))
     return False
@@ -332,20 +343,6 @@ def set_download_progress_hook(hook: Optional[DownloadProgressHook]) -> None:
     _download_progress_hook = hook
 
 
-def _ssl_context() -> ssl.SSLContext:
-    # System trust store plus certifi's bundle: fixes python.org macOS installs
-    # that ship without system certs, without turning verification off, and
-    # keeps CAs only present in the OS store (corporate proxies) working.
-    ctx = ssl.create_default_context()
-    try:
-        import certifi
-
-        ctx.load_verify_locations(cafile=certifi.where())
-    except (ImportError, OSError):
-        pass
-    return ctx
-
-
 def conditional_download(download_directory_path: str, urls: List[str]) -> None:
     os.makedirs(download_directory_path, exist_ok=True)
     for url in urls:
@@ -359,7 +356,11 @@ def conditional_download(download_directory_path: str, urls: List[str]) -> None:
         part_path = download_file_path + ".part"
         try:
             request = urllib.request.Request(url)
-            with urllib.request.urlopen(request, context=_ssl_context()) as response:
+            # Verified TLS on every platform; never disable verification here —
+            # model files are executed by the ONNX runtime (#1890).
+            with urllib.request.urlopen(
+                request, context=_ssl_context(), timeout=60
+            ) as response:
                 total = int(response.headers.get("Content-Length", 0))
                 done = 0
                 hook = _download_progress_hook

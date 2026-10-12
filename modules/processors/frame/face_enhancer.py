@@ -10,6 +10,7 @@ import onnxruntime
 
 import modules.globals
 import modules.processors.frame.core
+from modules import imread_unicode, imwrite_unicode
 from modules.core import update_status
 from modules.face_analyser import get_many_faces
 from modules.typing import Frame, Face
@@ -22,6 +23,7 @@ FACE_ENHANCER = None
 THREAD_SEMAPHORE = threading.Semaphore()
 THREAD_LOCK = threading.Lock()
 NAME = "DLC.FACE-ENHANCER"
+MODEL_FILE = "gfpgan-1024.onnx"
 
 from modules.paths import MODELS_DIR as models_dir
 
@@ -40,11 +42,12 @@ FFHQ_TEMPLATE_512 = np.array(
 
 
 def pre_check() -> bool:
-    model_path = os.path.join(models_dir, "gfpgan-1024.onnx")
-    if not os.path.exists(model_path):
+    from modules.model_downloader import ensure_model
+
+    if ensure_model(MODEL_FILE) is None:
         update_status(
-            f"GFPGAN ONNX model not found at {model_path}. "
-            "Please place gfpgan-1024.onnx in the models folder.",
+            f"Could not obtain {MODEL_FILE}. Place it in the models folder "
+            "manually or check your internet connection.",
             NAME,
         )
         return False
@@ -69,11 +72,15 @@ def get_face_enhancer() -> onnxruntime.InferenceSession:
 
     with THREAD_LOCK:
         if FACE_ENHANCER is None:
-            model_path = os.path.join(models_dir, "gfpgan-1024.onnx")
+            from modules.model_downloader import ensure_model
 
-            if not os.path.exists(model_path):
+            model_path = ensure_model(MODEL_FILE)
+
+            if model_path is None:
                 raise FileNotFoundError(
-                    f"{NAME}: Model not found at {model_path}"
+                    f"{NAME}: Model not found at "
+                    f"{os.path.join(models_dir, MODEL_FILE)} and could not be "
+                    "downloaded"
                 )
 
             try:
@@ -404,7 +411,7 @@ def process_frames(
                 progress.update(1)
             continue
 
-        temp_frame = cv2.imread(temp_frame_path)
+        temp_frame = imread_unicode(temp_frame_path)
         if temp_frame is None:
             print(
                 f"{NAME}: Warning: Failed to read frame {temp_frame_path}, skipping."
@@ -414,7 +421,7 @@ def process_frames(
             continue
 
         result_frame = process_frame(None, temp_frame)
-        cv2.imwrite(temp_frame_path, result_frame)
+        imwrite_unicode(temp_frame_path, result_frame)
         if progress:
             progress.update(1)
 
@@ -423,12 +430,12 @@ def process_image(
     source_path: str | None, target_path: str, output_path: str
 ) -> None:
     """Processes a single image file."""
-    target_frame = cv2.imread(target_path)
+    target_frame = imread_unicode(target_path)
     if target_frame is None:
         print(f"{NAME}: Error: Failed to read target image {target_path}")
         return
     result_frame = process_frame(None, target_frame)
-    cv2.imwrite(output_path, result_frame)
+    imwrite_unicode(output_path, result_frame)
     print(f"{NAME}: Enhanced image saved to {output_path}")
 
 

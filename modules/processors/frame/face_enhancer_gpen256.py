@@ -4,10 +4,9 @@ from typing import Any, List
 import os
 import threading
 
-import cv2
-
 import modules.globals
 import modules.processors.frame.core
+from modules import imread_unicode, imwrite_unicode
 from modules.core import update_status
 from modules.face_analyser import get_one_face
 from modules.typing import Frame, Face
@@ -23,7 +22,7 @@ from modules.processors.frame._onnx_enhancer import (
 
 NAME = "DLC.FACE-ENHANCER-GPEN256"
 INPUT_SIZE = 256
-MODEL_URL = "https://github.com/harisreedhar/Face-Upscalers-ONNX/releases/download/GPEN-BFR/GPEN-BFR-256.onnx"
+MODEL_MIRROR_URL = "https://github.com/harisreedhar/Face-Upscalers-ONNX/releases/download/GPEN-BFR/GPEN-BFR-256.onnx"
 MODEL_FILE = "GPEN-BFR-256.onnx"
 
 ENHANCER = None
@@ -32,12 +31,33 @@ THREAD_LOCK = threading.Lock()
 from modules.paths import MODELS_DIR as models_dir
 
 
+def _obtain_model():
+    from modules.model_downloader import ensure_model
+
+    model_path = ensure_model(MODEL_FILE)
+    if model_path is not None:
+        return model_path
+
+    update_status(f"Retrying {MODEL_FILE} from the mirror...", NAME)
+    from modules.utilities import conditional_download
+
+    try:
+        conditional_download(models_dir, [MODEL_MIRROR_URL])
+    except Exception as error:
+        update_status(f"Mirror download failed: {error}", NAME)
+        return None
+    fallback = os.path.join(models_dir, MODEL_FILE)
+    return fallback if os.path.exists(fallback) else None
+
+
 def pre_check() -> bool:
-    model_path = os.path.join(models_dir, MODEL_FILE)
-    if not os.path.exists(model_path):
-        update_status(f"Downloading {MODEL_FILE}...", NAME)
-        from modules.utilities import conditional_download
-        conditional_download(models_dir, [MODEL_URL])
+    if _obtain_model() is None:
+        update_status(
+            f"Could not obtain {MODEL_FILE}. Place it in the models folder "
+            "manually or check your internet connection.",
+            NAME,
+        )
+        return False
     return True
 
 
@@ -52,12 +72,11 @@ def get_enhancer() -> Any:
     global ENHANCER
     with THREAD_LOCK:
         if ENHANCER is None:
-            model_path = os.path.join(models_dir, MODEL_FILE)
-            if not os.path.exists(model_path):
-                from modules.utilities import conditional_download
-                conditional_download(models_dir, [MODEL_URL])
-            if not os.path.exists(model_path):
-                raise FileNotFoundError(f"Model file not found: {model_path}")
+            model_path = _obtain_model()
+            if model_path is None:
+                raise FileNotFoundError(
+                    f"Model file not found: {os.path.join(models_dir, MODEL_FILE)}"
+                )
             print(f"{NAME}: Loading ONNX model from {model_path}")
             ENHANCER = create_onnx_session(model_path)
             warmup_session(ENHANCER)
@@ -99,24 +118,24 @@ def process_frames(
     source_path: str | None, temp_frame_paths: List[str], progress: Any = None
 ) -> None:
     for temp_frame_path in temp_frame_paths:
-        temp_frame = cv2.imread(temp_frame_path)
+        temp_frame = imread_unicode(temp_frame_path)
         if temp_frame is None:
             if progress:
                 progress.update(1)
             continue
         result = process_frame(None, temp_frame)
-        cv2.imwrite(temp_frame_path, result)
+        imwrite_unicode(temp_frame_path, result)
         if progress:
             progress.update(1)
 
 
 def process_image(source_path: str | None, target_path: str, output_path: str) -> None:
-    target_frame = cv2.imread(target_path)
+    target_frame = imread_unicode(target_path)
     if target_frame is None:
         print(f"{NAME}: Error: Failed to read target image {target_path}")
         return
     result_frame = process_frame(None, target_frame)
-    cv2.imwrite(output_path, result_frame)
+    imwrite_unicode(output_path, result_frame)
     print(f"{NAME}: Enhanced image saved to {output_path}")
 
 
