@@ -534,3 +534,19 @@ Looking for a CLI mode? Using the -s/--source argument will make the run program
    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=hacksider/deep-live-cam&type=Date" />
  </picture>
 </a>
+
+## Presenter videos (studio)
+
+A separate, Claude-driven pipeline for vertical AI presenter videos from a selfie, a voice sample and a one-line brief. It uses ElevenLabs for the voice, HeyGen for the avatar, lip-sync and scene clips, and HyperFrames to assemble captions and the final MP4. It does not use the face-swap engine above.
+
+```bash
+pip install -r requirements-studio.txt
+export ELEVENLABS_API_KEY=...   # in your shell, never in chat
+export HEYGEN_API_KEY=...
+python -m studio doctor
+python -m studio character-new --name "Sam" --selfie sam.jpg --voice-sample sam.mp3 --consent-confirmed
+python -m studio estimate plan.json
+python -m studio render plan.json --max-cost <approved quote> -o out/video.mp4
+```
+
+Copy `studio/prices.example.toml` to `studio/prices.toml` and enter your own vendor prices so estimates are real. In Claude Code, the `presenter-video` skill drives all of this. Only create a likeness or voice clone of someone who has agreed.

@@ -27,7 +27,8 @@ faceswap/
 switch_states.json
 /models
 install.bat
-/.claude
+/.claude/*
+!/.claude/skills/
 *.bat
 
 # Desktop app build outputs
@@ -36,3 +37,9 @@ install.bat
 /.venv-build/
 packaging/icons/
 packaging/ffmpeg-bin/
+
+# studio (presenter-video pipeline)
+studio/data/
+studio/prices.toml
+studio/hyperframes/node_modules/
+studio/hyperframes/builds/

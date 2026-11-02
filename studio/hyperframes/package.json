@@ -1,0 +1,9 @@
+{
+  "name": "studio-hyperframes",
+  "private": true,
+  "description": "Renderer for studio compositions (HyperFrames: HTML -> MP4). Needs Node 22+, ffmpeg and Chrome.",
+  "dependencies": {
+    "gsap": "3.12.5",
+    "hyperframes": "0.9.0"
+  }
+}
