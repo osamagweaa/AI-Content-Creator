@@ -1,0 +1,7 @@
+# Copy to studio/prices.toml and fill in YOUR numbers from the ElevenLabs and HeyGen
+# pricing/usage pages (any single currency or credit unit, used consistently).
+# Zeros are placeholders: `estimate` refuses to quote until you replace them.
+[prices]
+tts_per_1k_chars = 0   # ElevenLabs: cost per 1,000 characters of text-to-speech
+talk_per_sec = 0       # HeyGen: lip-synced avatar video (POST /v3/videos), per second
+scene_per_sec = 0      # HeyGen: heygen-video-1 image_to_video (768p), per second

@@ -1,5 +1,19 @@
 # AGENTS.md
 
+## Presenter-video studio (`studio/`)
+
+Claude-driven pipeline for vertical AI presenter videos: ElevenLabs (voice), HeyGen (avatar, lip-sync, scene clips), HyperFrames (assembly). No other vendors. Full workflow, rules and plan schema are in `.claude/skills/presenter-video/SKILL.md`; read it before running anything.
+
+- Setup: `pip install -r requirements-studio.txt && python -m studio doctor` (needs Node 22+, ffmpeg, Chrome).
+- Keys come from `ELEVENLABS_API_KEY` and `HEYGEN_API_KEY` in the environment. Never ask for or print them.
+- Always `estimate`, get the user's yes, then `render --max-cost <approved>`.
+- Offline check: `python -m studio render plan.json --max-cost 1 --dry-run`.
+- Tests: `python -m unittest tests.test_studio_plan_and_estimate tests.test_studio_providers tests.test_studio_render`.
+
+## Deep-Live-Cam (legacy face-swap app)
+
+The sections below cover the original Deep-Live-Cam desktop/CLI app, which the studio does not use.
+
 ## Cursor Cloud specific instructions
 
 Deep-Live-Cam is a single **Python desktop application** (PySide6 GUI + a headless
